@@ -1,0 +1,364 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#08111f" />
+  <title>HandTrack — Pelacak Tangan</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #08111f;
+      --panel: #101d30;
+      --panel-2: #14243a;
+      --text: #edf5ff;
+      --muted: #9eb0c8;
+      --accent: #53e0c0;
+      --accent-2: #7ca7ff;
+      --danger: #ff7f91;
+      --border: rgba(190, 214, 255, .13);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100svh;
+      padding: max(18px, env(safe-area-inset-top)) 14px max(20px, env(safe-area-inset-bottom));
+      background: radial-gradient(ellipse at 50% -10%, #1a3651 0%, var(--bg) 55%);
+      color: var(--text);
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+    .app { width: min(100%, 980px); margin: 0 auto; }
+    header { display: flex; align-items: center; gap: 12px; margin: 3px 0 20px; }
+    .logo {
+      display: grid; place-items: center; width: 48px; height: 48px; flex: 0 0 48px;
+      border: 1px solid rgba(83,224,192,.35); border-radius: 15px;
+      background: rgba(83,224,192,.1); color: var(--accent); font-size: 25px;
+    }
+    h1 { margin: 0; font-size: clamp(23px, 5vw, 31px); letter-spacing: -.7px; }
+    .subtitle { margin: 3px 0 0; color: var(--muted); font-size: 13px; }
+    .panel {
+      overflow: hidden; border: 1px solid var(--border); border-radius: 21px;
+      background: linear-gradient(150deg, rgba(20,36,58,.97), rgba(12,24,41,.98));
+      box-shadow: 0 18px 50px rgba(0,0,0,.22);
+    }
+    .panel-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 14px 16px; }
+    .cam-label { display: flex; align-items: center; gap: 9px; font-weight: 700; font-size: 14px; }
+    .live-dot { width: 9px; height: 9px; border-radius: 50%; background: #62738a; }
+    .live-dot.active { background: var(--accent); box-shadow: 0 0 12px rgba(83,224,192,.8); }
+    .badge { border: 1px solid var(--border); border-radius: 99px; padding: 6px 10px; color: var(--muted); font-size: 11px; white-space: nowrap; }
+    .stage {
+      position: relative; width: 100%; aspect-ratio: 4 / 3; overflow: hidden;
+      background: #050b13; border-top: 1px solid var(--border); border-bottom: 1px solid var(--border);
+    }
+    video, canvas { position: absolute; inset: 0; display: block; width: 100%; height: 100%; }
+    video { object-fit: fill; transform: scaleX(-1); }
+    canvas { transform: scaleX(-1); pointer-events: none; }
+    .placeholder {
+      position: absolute; inset: 0; display: grid; place-content: center; justify-items: center;
+      padding: 24px; text-align: center; color: var(--muted); background:
+        linear-gradient(rgba(6,14,25,.82), rgba(6,14,25,.88)),
+        repeating-linear-gradient(0deg, transparent 0 31px, rgba(124,167,255,.08) 32px),
+        repeating-linear-gradient(90deg, transparent 0 31px, rgba(124,167,255,.08) 32px);
+    }
+    .placeholder.hidden { display: none; }
+    .placeholder .hand { font-size: 55px; margin-bottom: 8px; }
+    .placeholder strong { color: var(--text); font-size: 16px; margin-bottom: 6px; }
+    .placeholder p { max-width: 300px; margin: 0; font-size: 13px; line-height: 1.55; }
+    .metrics { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; padding: 13px; }
+    .metric { min-width: 0; padding: 12px; background: rgba(255,255,255,.035); border: 1px solid var(--border); border-radius: 13px; }
+    .metric .label { color: var(--muted); font-size: 11px; margin-bottom: 6px; }
+    .metric .value { font-size: 17px; font-weight: 750; overflow-wrap: anywhere; }
+    .metric .value.small { font-size: 14px; }
+    .controls { display: flex; flex-wrap: wrap; gap: 9px; padding: 0 13px 14px; }
+    button {
+      appearance: none; border: 1px solid var(--border); border-radius: 12px; padding: 12px 15px;
+      font: inherit; font-size: 13px; font-weight: 750; cursor: pointer; min-height: 45px;
+      color: var(--text); background: rgba(255,255,255,.06); flex: 1 1 130px;
+    }
+    button.primary { background: var(--accent); color: #06231e; border-color: transparent; }
+    button:disabled { opacity: .55; cursor: wait; }
+    button:focus-visible { outline: 3px solid var(--accent-2); outline-offset: 3px; }
+    .note { margin: 13px 3px 0; color: var(--muted); font-size: 12px; line-height: 1.6; }
+    .note strong { color: #dce8fa; }
+    .error { display: none; margin: 12px 3px 0; padding: 11px 12px; color: #ffdce1; background: rgba(255,127,145,.1); border: 1px solid rgba(255,127,145,.3); border-radius: 11px; font-size: 13px; line-height: 1.5; }
+    .error.show { display: block; }
+    @media (min-width: 760px) {
+      body { padding: 28px 24px; }
+      .workspace { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(260px, .8fr); gap: 15px; align-items: start; }
+      .stage { aspect-ratio: 4/3; }
+      .metrics { grid-template-columns: 1fr; }
+      .controls { padding-top: 0; }
+    }
+    @media (max-width: 380px) {
+      body { padding-left: 9px; padding-right: 9px; }
+      .panel-head { padding: 12px; }
+      .metrics { padding: 9px; gap: 7px; }
+      .controls { padding: 0 9px 10px; }
+      .metric { padding: 10px; }
+      button { flex-basis: 115px; padding: 11px 10px; }
+    }
+  </style>
+</head>
+<body>
+  <main class="app">
+    <header>
+      <div class="logo" aria-hidden="true">✋</div>
+      <div>
+        <h1>HandTrack</h1>
+        <p class="subtitle">Pelacakan gerakan tangan secara langsung</p>
+      </div>
+    </header>
+
+    <div class="workspace">
+      <section class="panel" aria-label="Pratinjau kamera">
+        <div class="panel-head">
+          <div class="cam-label"><span class="live-dot" id="liveDot"></span><span>Kamera langsung</span></div>
+          <span class="badge" id="statusBadge">Kamera mati</span>
+        </div>
+        <div class="stage" id="stage">
+          <video id="video" playsinline muted></video>
+          <canvas id="overlay"></canvas>
+          <div class="placeholder" id="placeholder">
+            <div class="hand" aria-hidden="true">🖐️</div>
+            <strong>Siap melacak tangan</strong>
+            <p>Tekan “Mulai kamera”, izinkan akses kamera, lalu arahkan telapak tangan ke kamera.</p>
+          </div>
+        </div>
+        <div class="metrics">
+          <div class="metric">
+            <div class="label">Tangan terdeteksi</div>
+            <div class="value" id="handCount">0 tangan</div>
+          </div>
+          <div class="metric">
+            <div class="label">Status pelacakan</div>
+            <div class="value small" id="trackingStatus">Belum dimulai</div>
+          </div>
+        </div>
+        <div class="controls">
+          <button class="primary" id="startBtn">Mulai kamera</button>
+          <button id="stopBtn" disabled>Matikan kamera</button>
+          <button id="fullscreenBtn">Layar penuh</button>
+        </div>
+      </section>
+
+      <aside>
+        <section class="panel">
+          <div class="panel-head"><div class="cam-label">Cara menggunakan</div></div>
+          <div style="padding:0 16px 16px;color:var(--muted);font-size:13px;line-height:1.75">
+            <p style="margin:0 0 10px"><strong style="color:var(--text)">1.</strong> Tekan <strong style="color:var(--text)">Mulai kamera</strong> dan izinkan akses kamera.</p>
+            <p style="margin:0 0 10px"><strong style="color:var(--text)">2.</strong> Letakkan satu atau dua tangan di depan kamera dengan pencahayaan yang cukup.</p>
+            <p style="margin:0"><strong style="color:var(--text)">3.</strong> Titik dan garis akan mengikuti 21 titik utama pada tiap tangan yang terdeteksi.</p>
+          </div>
+        </section>
+        <div class="note"><strong>Privasi:</strong> kode ini memproses gambar kamera di browser dan tidak mengirim rekaman ke server. Koneksi internet tetap diperlukan untuk memuat pustaka dan model pelacakan.</div>
+        <div class="error" id="errorBox" role="alert"></div>
+      </aside>
+    </div>
+  </main>
+
+  <script type="module">
+    import { FilesetResolver, HandLandmarker } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision/vision_bundle.mjs";
+
+    const video = document.getElementById('video');
+    const canvas = document.getElementById('overlay');
+    const ctx = canvas.getContext('2d');
+    const placeholder = document.getElementById('placeholder');
+    const startBtn = document.getElementById('startBtn');
+    const stopBtn = document.getElementById('stopBtn');
+    const fullscreenBtn = document.getElementById('fullscreenBtn');
+    const statusBadge = document.getElementById('statusBadge');
+    const trackingStatus = document.getElementById('trackingStatus');
+    const handCount = document.getElementById('handCount');
+    const liveDot = document.getElementById('liveDot');
+    const errorBox = document.getElementById('errorBox');
+
+    const WASM_URL = 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/wasm';
+    const MODEL_URL = 'https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task';
+    const CONNECTIONS = [
+      [0,1],[1,2],[2,3],[3,4],
+      [0,5],[5,6],[6,7],[7,8],
+      [5,9],[9,10],[10,11],[11,12],
+      [9,13],[13,14],[14,15],[15,16],
+      [13,17],[17,18],[18,19],[19,20],[0,17]
+    ];
+
+    let handLandmarker = null;
+    let cameraStream = null;
+    let running = false;
+    let lastVideoTime = -1;
+    let animationId = null;
+
+    function showError(message) {
+      errorBox.textContent = message;
+      errorBox.classList.add('show');
+    }
+    function clearError() {
+      errorBox.textContent = '';
+      errorBox.classList.remove('show');
+    }
+    function setStatus(text, active = false) {
+      statusBadge.textContent = text;
+      liveDot.classList.toggle('active', active);
+    }
+
+    async function loadModel() {
+      if (handLandmarker) return;
+      trackingStatus.textContent = 'Memuat model AI…';
+      const vision = await FilesetResolver.forVisionTasks(WASM_URL);
+      handLandmarker = await HandLandmarker.createFromOptions(vision, {
+        baseOptions: { modelAssetPath: MODEL_URL },
+        runningMode: 'VIDEO',
+        numHands: 2,
+        minHandDetectionConfidence: 0.55,
+        minHandPresenceConfidence: 0.55,
+        minTrackingConfidence: 0.55
+      });
+    }
+
+    async function startCamera() {
+      clearError();
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        showError('Browser ini tidak menyediakan akses kamera. Buka website melalui HTTPS menggunakan browser modern seperti Chrome.');
+        return;
+      }
+      startBtn.disabled = true;
+      startBtn.textContent = 'Menyiapkan…';
+      setStatus('Menyiapkan', false);
+      try {
+        await loadModel();
+        cameraStream = await navigator.mediaDevices.getUserMedia({
+          audio: false,
+          video: {
+            facingMode: 'user',
+            width: { ideal: 960 },
+            height: { ideal: 720 },
+            frameRate: { ideal: 24, max: 30 }
+          }
+        });
+        video.srcObject = cameraStream;
+        await video.play();
+        if (!video.videoWidth || !video.videoHeight) {
+          await new Promise((resolve) => video.addEventListener('loadedmetadata', resolve, { once: true }));
+        }
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+        placeholder.classList.add('hidden');
+        running = true;
+        lastVideoTime = -1;
+        startBtn.textContent = 'Kamera aktif';
+        stopBtn.disabled = false;
+        trackingStatus.textContent = 'Mencari tangan…';
+        setStatus('Aktif', true);
+        animationId = requestAnimationFrame(renderLoop);
+      } catch (error) {
+        stopCamera(false);
+        const message = error?.name === 'NotAllowedError'
+          ? 'Izin kamera ditolak. Izinkan akses kamera melalui pengaturan izin situs, lalu coba lagi.'
+          : error?.name === 'NotFoundError'
+            ? 'Kamera tidak ditemukan pada perangkat ini.'
+            : 'Kamera atau model pelacakan gagal dimuat. Pastikan internet aktif, izinkan kamera, lalu coba lagi.';
+        showError(message);
+        trackingStatus.textContent = 'Gagal dimulai';
+        setStatus('Tidak aktif', false);
+      } finally {
+        startBtn.disabled = false;
+        if (!running) startBtn.textContent = 'Coba lagi';
+      }
+    }
+
+    function renderLoop() {
+      if (!running) return;
+      if (video.readyState >= 2 && video.currentTime !== lastVideoTime) {
+        lastVideoTime = video.currentTime;
+        try {
+          const result = handLandmarker.detectForVideo(video, performance.now());
+          drawHands(result.landmarks || []);
+          const count = (result.landmarks || []).length;
+          handCount.textContent = `${count} ${count === 1 ? 'tangan' : 'tangan'}`;
+          trackingStatus.textContent = count > 0 ? 'Pelacakan aktif' : 'Arahkan tangan ke kamera';
+        } catch (error) {
+          console.error('Kesalahan pelacakan tangan:', error);
+          trackingStatus.textContent = 'Pelacakan terganggu';
+        }
+      }
+      animationId = requestAnimationFrame(renderLoop);
+    }
+
+    function drawHands(allHands) {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      const scale = Math.max(1, canvas.width / 640);
+      for (const points of allHands) {
+        // Draw the connecting lines between hand landmarks.
+        ctx.lineWidth = 3.2 * scale;
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+        ctx.strokeStyle = '#53e0c0';
+        ctx.shadowColor = 'rgba(83,224,192,.45)';
+        ctx.shadowBlur = 5 * scale;
+        ctx.beginPath();
+        for (const [a, b] of CONNECTIONS) {
+          if (!points[a] || !points[b]) continue;
+          ctx.moveTo(points[a].x * canvas.width, points[a].y * canvas.height);
+          ctx.lineTo(points[b].x * canvas.width, points[b].y * canvas.height);
+        }
+        ctx.stroke();
+        ctx.shadowBlur = 0;
+        // Draw 21 small nodes.
+        for (const point of points) {
+          const x = point.x * canvas.width;
+          const y = point.y * canvas.height;
+          ctx.beginPath();
+          ctx.arc(x, y, 4.1 * scale, 0, Math.PI * 2);
+          ctx.fillStyle = '#f3fffc';
+          ctx.fill();
+          ctx.lineWidth = 2 * scale;
+          ctx.strokeStyle = '#16bfa1';
+          ctx.stroke();
+        }
+      }
+    }
+
+    function stopCamera(resetButton = true) {
+      running = false;
+      if (animationId !== null) cancelAnimationFrame(animationId);
+      animationId = null;
+      if (cameraStream) {
+        for (const track of cameraStream.getTracks()) track.stop();
+        cameraStream = null;
+      }
+      video.pause();
+      video.srcObject = null;
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      placeholder.classList.remove('hidden');
+      handCount.textContent = '0 tangan';
+      trackingStatus.textContent = 'Belum dimulai';
+      stopBtn.disabled = true;
+      setStatus('Kamera mati', false);
+      if (resetButton) {
+        startBtn.disabled = false;
+        startBtn.textContent = 'Mulai kamera';
+      }
+    }
+
+    startBtn.addEventListener('click', startCamera);
+    stopBtn.addEventListener('click', () => stopCamera(true));
+    fullscreenBtn.addEventListener('click', async () => {
+      try {
+        const target = document.getElementById('stage');
+        if (!document.fullscreenElement) {
+          if (target.requestFullscreen) await target.requestFullscreen();
+          else showError('Mode layar penuh tidak didukung browser ini.');
+        } else {
+          await document.exitFullscreen();
+        }
+      } catch (error) {
+        showError('Mode layar penuh tidak dapat dibuka di browser ini.');
+      }
+    });
+    document.addEventListener('fullscreenchange', () => {
+      fullscreenBtn.textContent = document.fullscreenElement ? 'Keluar layar penuh' : 'Layar penuh';
+    });
+    window.addEventListener('pagehide', () => stopCamera(false));
+  </script>
+</body>
+</html>
